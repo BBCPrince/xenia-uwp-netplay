@@ -4,7 +4,7 @@
     </a>
 </p>
 
-Xenia Canary UWP is an unofficial fork of Xenia Canary to support UWP and the Xbox platforms. It is not associated with the Xenia developers.
+Xenia Canary UWP is an unofficial fork of Xenia Canary to support UWP and Netplay and the Xbox platforms. It is not associated with the Xenia developers.
 
 <h1>Original Readme</h1>
 
