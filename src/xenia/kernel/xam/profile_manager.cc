@@ -9,9 +9,12 @@
 
 #include "xenia/kernel/xam/profile_manager.h"
 
+#include <filesystem>
+
 #include "xenia/base/logging.h"
 #include "xenia/emulator.h"
 #include "xenia/hid/input_system.h"
+#include "xenia/kernel/XLiveAPI.h"
 #include "xenia/kernel/kernel_state.h"
 #include "xenia/kernel/util/crypto_utils.h"
 #include "xenia/vfs/devices/host_path_device.h"
@@ -143,7 +146,18 @@ void ProfileManager::ReloadProfiles() {
 }
 
 UserProfile* ProfileManager::GetProfile(const uint64_t xuid) const {
-  const uint8_t user_index = GetUserIndexAssignedToProfile(xuid);
+  uint8_t user_index = GetUserIndexAssignedToProfile(xuid);
+
+  if (user_index >= XUserMaxUserCount) {
+    return nullptr;
+  }
+
+  return GetProfile(user_index);
+}
+
+UserProfile* ProfileManager::GetProfileLive(const uint64_t xuid) const {
+  uint8_t user_index = GetUserIndexAssignedToLiveProfile(xuid);
+
   if (user_index >= XUserMaxUserCount) {
     return nullptr;
   }
@@ -305,6 +319,14 @@ void ProfileManager::Login(const uint64_t xuid, const uint8_t user_index,
                                          GetUsedUserSlots().to_ulong());
   }
   UpdateConfig(xuid, assigned_user_slot);
+
+  if (XLiveAPI::GetInitState() == XLiveAPI::InitState::Success) {
+    std::unique_ptr<HTTPResponseObjectJSON> reg_result =
+        XLiveAPI::RegisterPlayer();
+
+    logged_profiles_[assigned_user_slot]->AddDummyFriends(
+        XLiveAPI::dummy_friends_count);
+  }
 }
 
 void ProfileManager::Logout(const uint8_t user_index, bool notify) {
@@ -322,6 +344,16 @@ void ProfileManager::Logout(const uint8_t user_index, bool notify) {
                                          GetUsedUserSlots().to_ulong());
   }
   UpdateConfig(0, user_index);
+}
+
+void ProfileManager::LogoutMultiple(
+    const std::map<uint8_t, uint64_t>& profiles) {
+  for (auto& [slot, xuid] : profiles) {
+    Logout(slot, false);
+  }
+
+  kernel_state_->BroadcastNotification(kXNotificationSystemSignInChanged,
+                                       GetUsedUserSlots().to_ulong());
 }
 
 void ProfileManager::LoginMultiple(
@@ -416,6 +448,22 @@ uint8_t ProfileManager::GetUserIndexAssignedToProfile(
   return XUserIndexAny;
 }
 
+uint8_t ProfileManager::GetUserIndexAssignedToLiveProfile(
+    const uint64_t xuid_online) const {
+  for (const auto& [index, entry] : logged_profiles_) {
+    if (!entry) {
+      continue;
+    }
+
+    if (entry->GetOnlineXUID() != xuid_online) {
+      continue;
+    }
+
+    return index;
+  }
+  return XUserIndexAny;
+}
+
 std::filesystem::path ProfileManager::GetProfileContentPath(
     const uint64_t xuid, const uint32_t title_id,
     const XContentType content_type) const {
@@ -447,7 +495,7 @@ std::filesystem::path ProfileManager::GetProfilePath(
 }
 
 bool ProfileManager::CreateProfile(const std::string gamertag, bool autologin,
-                                   bool default_xuid) {
+                                   bool default_xuid, uint32_t reserved_flags) {
   const auto xuid = !default_xuid ? GenerateXuid() : 0xB13EBABEBABEBABE;
 
   if (!std::filesystem::create_directories(GetProfilePath(xuid))) {
@@ -458,7 +506,7 @@ bool ProfileManager::CreateProfile(const std::string gamertag, bool autologin,
     return false;
   }
 
-  const bool is_account_created = CreateAccount(xuid, gamertag);
+  const bool is_account_created = CreateAccount(xuid, gamertag, reserved_flags);
   if (is_account_created && autologin) {
     Login(xuid);
   }
@@ -491,12 +539,22 @@ const X_XAMACCOUNTINFO* ProfileManager::GetAccount(const uint64_t xuid) {
 }
 
 bool ProfileManager::CreateAccount(const uint64_t xuid,
-                                   const std::string gamertag) {
+                                   const std::string gamertag,
+                                   uint32_t reserved_flags) {
   X_XAMACCOUNTINFO account = {};
-  const std::u16string gamertag_u16 = xe::to_utf16(gamertag);
+  std::u16string gamertag_u16 = xe::to_utf16(gamertag);
 
   string_util::copy_and_swap_truncating(account.gamertag, gamertag_u16,
                                         sizeof(account.gamertag));
+
+  const bool live_enabled =
+      reserved_flags & X_XAMACCOUNTINFO::AccountReservedFlags::kLiveEnabled;
+
+  account.reserved_flags = reserved_flags;
+
+  if (live_enabled) {
+    account.xuid_online = GenerateXuidOnline();
+  }
 
   const bool result = UpdateAccount(xuid, &account);
   DismountProfile(xuid);
@@ -593,6 +651,73 @@ bool ProfileManager::DeleteProfile(const uint64_t xuid) {
     return false;
   }
   return true;
+}
+
+bool ProfileManager::ModifyAccount(
+    const uint64_t xuid, X_XAMACCOUNTINFO* account,
+    std::function<bool(X_XAMACCOUNTINFO* account)> action) {
+  const uint8_t user_index = GetUserIndexAssignedToProfile(xuid);
+
+  if (user_index < XUserMaxUserCount) {
+    Logout(user_index);
+  }
+
+  if (!accounts_.count(xuid)) {
+    return false;
+  }
+
+  auto result = action(account);
+
+  if (!MountProfile(xuid)) {
+    return false;
+  }
+
+  if (!UpdateAccount(xuid, account)) {
+    return false;
+  }
+
+  if (!DismountProfile(xuid)) {
+    return false;
+  }
+
+  if (user_index < XUserMaxUserCount) {
+    Login(xuid);
+  }
+
+  return true;
+}
+
+bool ProfileManager::ConvertToXboxLiveEnabledProfile(const uint64_t xuid) {
+  X_XAMACCOUNTINFO* account = &accounts_[xuid];
+
+  auto run = [this, account](X_XAMACCOUNTINFO* account) {
+    account->reserved_flags =
+        account->reserved_flags.get() |
+        X_XAMACCOUNTINFO::AccountReservedFlags::kLiveEnabled;
+
+    // Generate once
+    if (!account->xuid_online) {
+      account->xuid_online = GenerateXuidOnline();
+    }
+
+    return true;
+  };
+
+  return ModifyAccount(xuid, account, run);
+}
+
+bool ProfileManager::ConvertToOfflineProfile(const uint64_t xuid) {
+  X_XAMACCOUNTINFO* account = &accounts_[xuid];
+
+  auto run = [account](X_XAMACCOUNTINFO* account) {
+    account->reserved_flags =
+        account->reserved_flags.get() &
+        ~X_XAMACCOUNTINFO::AccountReservedFlags::kLiveEnabled;
+
+    return true;
+  };
+
+  return ModifyAccount(xuid, account, run);
 }
 
 bool ProfileManager::IsGamertagValid(const std::string gamertag) {

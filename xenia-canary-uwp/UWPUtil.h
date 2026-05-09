@@ -43,6 +43,7 @@ void SelectFiles(std::function<void(std::vector<std::string>)> callback);
 bool TestPathPermissions(std::string path);
 std::string GetLocalCache();
 std::string GetLocalState();
+bool IsDesktopDeviceFamily();
 int GetCoreDPI();
 void SetAutomaticLaunch(std::string game_path);
 void SetDPI(int DPI);

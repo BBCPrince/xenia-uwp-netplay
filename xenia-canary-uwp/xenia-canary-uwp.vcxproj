@@ -86,9 +86,6 @@
     <AppxBundle>Always</AppxBundle>
     <AppxBundlePlatforms>x64</AppxBundlePlatforms>
     <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
-    <PackageCertificateKeyFile>XeniaDevCert.pfx</PackageCertificateKeyFile>
-    <PackageCertificatePassword>xenia123</PackageCertificatePassword>
-    <PackageCertificateThumbprint>EDA6F6AC2865A64DFFF7E29AC79FDBED3A1C9CE7</PackageCertificateThumbprint>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>xeniacanary</TargetName>
@@ -130,6 +127,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <ProgramDatabaseFile>$(OutDir)xeniacanary_uwp_link.pdb</ProgramDatabaseFile>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries Condition="'$(Configuration)|$(Platform)'=='Release|x64'">libcmt.lib</IgnoreSpecificDefaultLibraries>
     </Link>
@@ -193,6 +191,14 @@
     </ProjectReference>
     <ProjectReference Include="../build/fmt.vcxproj">
       <Project>{B9FF4B2C-B438-42A9-971E-E0C19A711A13}</Project>
+      <Properties>Configuration=Release Windows;Platform=x64</Properties>
+    </ProjectReference>
+    <ProjectReference Include="../build/libcurl.vcxproj">
+      <Project>{1BA7E608-5752-457C-8DF0-C006C6E8B7FE}</Project>
+      <Properties>Configuration=Release Windows;Platform=x64</Properties>
+    </ProjectReference>
+    <ProjectReference Include="../build/miniupnp.vcxproj">
+      <Project>{B7E0088F-ACE6-4BBA-B2CC-FAAE156C27FC}</Project>
       <Properties>Configuration=Release Windows;Platform=x64</Properties>
     </ProjectReference>
     <ProjectReference Include="../build/dxbc.vcxproj">
@@ -311,7 +317,6 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="PropertySheet.props" />
-    <None Include="xenia-canary-uwp_TemporaryKey.pfx" />
     <Text Include="readme.txt">
       <DeploymentContent>false</DeploymentContent>
     </Text>

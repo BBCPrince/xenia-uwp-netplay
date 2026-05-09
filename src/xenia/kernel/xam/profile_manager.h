@@ -11,6 +11,7 @@
 #define XENIA_KERNEL_XAM_PROFILE_MANAGER_H_
 
 #include <bitset>
+#include <functional>
 #include <random>
 #include <string>
 #include <vector>
@@ -44,11 +45,11 @@ inline const std::string kDashboardStringID =
 
 constexpr std::string_view kDefaultMountFormat = "User_{:016X}";
 
-const static inline uint64_t GenerateXuid() {
+static inline uint64_t GenerateXuid() {
   std::random_device rd;
   std::mt19937 gen(rd());
 
-  return ((uint64_t)0xE03 << 52) + (gen() % (1 << 31));
+  return (0xE03ULL << 52) + (gen() % (1 << 31));
 }
 
 class ProfileManager {
@@ -70,16 +71,25 @@ class ProfileManager {
   ~ProfileManager() = default;
 
   bool CreateProfile(const std::string gamertag, bool autologin,
-                     bool default_xuid = false);
+                     bool default_xuid = false, uint32_t reserved_flags = 0);
   bool CreateProfile(const X_XAMACCOUNTINFO* account_info, uint64_t xuid);
 
   bool DeleteProfile(const uint64_t xuid);
+
+  bool ModifyAccount(const uint64_t xuid, X_XAMACCOUNTINFO* account,
+                     std::function<bool(X_XAMACCOUNTINFO* account)> action);
+
+  bool ConvertToXboxLiveEnabledProfile(const uint64_t xuid);
+
+  bool ConvertToOfflineProfile(const uint64_t xuid);
 
   bool MountProfile(const uint64_t xuid, std::string mount_path = "");
   bool DismountProfile(const uint64_t xuid);
 
   void Login(const uint64_t xuid, const uint8_t user_index = XUserIndexAny,
              bool notify = true);
+  void LogoutMultiple(const std::map<uint8_t, uint64_t>& profiles);
+
   void Logout(const uint8_t user_index, bool notify = true);
   void LoginMultiple(const std::map<uint8_t, uint64_t>& profiles);
 
@@ -89,8 +99,10 @@ class ProfileManager {
   void ReloadProfile(const uint64_t xuid);
 
   UserProfile* GetProfile(const uint64_t xuid) const;
+  UserProfile* GetProfileLive(const uint64_t xuid) const;
   UserProfile* GetProfile(const uint8_t user_index) const;
   uint8_t GetUserIndexAssignedToProfile(const uint64_t xuid) const;
+  uint8_t GetUserIndexAssignedToLiveProfile(const uint64_t xuid_online) const;
 
   const std::map<uint64_t, X_XAMACCOUNTINFO>* GetAccounts() {
     return &accounts_;
@@ -101,6 +113,7 @@ class ProfileManager {
     return static_cast<uint32_t>(accounts_.size());
   }
   bool IsAnyProfileSignedIn() const { return !logged_profiles_.empty(); }
+  uint32_t SignedInProfilesCount() const { return !logged_profiles_.size(); }
 
   std::filesystem::path GetProfileContentPath(
       const uint64_t xuid, const uint32_t title_id = -1,
@@ -110,9 +123,17 @@ class ProfileManager {
 
   static bool IsGamertagValid(const std::string gamertag);
 
+  uint64_t GenerateXuidOnline() const {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    return (0x9ULL << 48) + (gen() % (1 << 31));
+  }
+
  private:
   void UpdateConfig(const uint64_t xuid, const uint8_t slot);
-  bool CreateAccount(const uint64_t xuid, const std::string gamertag);
+  bool CreateAccount(const uint64_t xuid, const std::string gamertag,
+                     uint32_t reserved_flags);
   bool CreateAccount(const uint64_t xuid, const X_XAMACCOUNTINFO* account);
 
   std::filesystem::path GetProfilePath(const uint64_t xuid) const;
@@ -122,6 +143,13 @@ class ProfileManager {
 
   uint8_t FindFirstFreeProfileSlot() const;
   std::bitset<XUserMaxUserCount> GetUsedUserSlots() const;
+
+  uint64_t GenerateXuid() const {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    return ((uint64_t)0xE03 << 52) + (gen() % (1 << 31));
+  }
 
   std::map<uint64_t, X_XAMACCOUNTINFO> accounts_;
   std::map<uint8_t, std::unique_ptr<UserProfile>> logged_profiles_;

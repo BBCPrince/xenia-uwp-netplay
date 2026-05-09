@@ -44,6 +44,7 @@
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Security.Cryptography.h>
+#include <winrt/Windows.System.Profile.h>
 #include <winrt/Windows.Web.Http.Headers.h>
 
 #include "third_party/zlib-ng/zlib-ng.h"
@@ -158,6 +159,11 @@ std::string GetLocalCache() {
 std::string GetLocalState() {
   return winrt::to_string(
       winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path());
+}
+
+bool IsDesktopDeviceFamily() {
+  return winrt::Windows::System::Profile::AnalyticsInfo::VersionInfo()
+             .DeviceFamily() == L"Windows.Desktop";
 }
 
 int GetCoreDPI() { return m_DPI; }

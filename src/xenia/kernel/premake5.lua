@@ -11,6 +11,8 @@ project("xenia-kernel")
     "fmt",
     "zlib-ng",
     "pugixml",
+    "libcurl",
+    "miniupnp",
     "xenia-apu",
     "xenia-base",
     "xenia-cpu",
@@ -23,6 +25,8 @@ project("xenia-kernel")
     "X86_SSSE3",
     "X86_SSE42",
     "WITH_GZFILEOP",
+    "CURL_STATICLIB",
+    "MINIUPNP_STATICLIB",
   })
   if os.istarget("windows") then
     defines({

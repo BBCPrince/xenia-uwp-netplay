@@ -164,6 +164,10 @@ class GameInfoDatabase {
 
   // This is extracted from XLast.
   Query GetQueryData(const uint32_t id) const;
+  bool HasXLast() const {
+    return xlast_gamedata_ && xlast_gamedata_->HasXLast();
+  }
+  const XLast* GetXLast() const { return xlast_gamedata_.get(); }
   std::vector<XLanguage> GetSupportedLanguages() const;
   ProductInformation GetProductInformation() const;
   PropertyBag GetMatchmakingCollection() const;

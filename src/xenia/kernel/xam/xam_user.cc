@@ -16,6 +16,7 @@
 #include "xenia/kernel/xam/user_settings.h"
 #include "xenia/kernel/xam/xam_private.h"
 #include "xenia/kernel/xenumerator.h"
+#include "xenia/kernel/xsession.h"
 #include "xenia/xbox.h"
 
 #include "third_party/stb/stb_image.h"
@@ -53,11 +54,9 @@ X_HRESULT_result_t XamUserGetXUID_entry(dword_t user_index, dword_t type_mask,
 
   auto type = user_profile->type() & type_mask;
   if (type & (2 | 4)) {
-    // maybe online profile?
-    xuid = user_profile->xuid();
+    xuid = user_profile->GetOnlineXUID();
     result = X_E_SUCCESS;
   } else if (type & 1) {
-    // maybe offline profile?
     xuid = user_profile->xuid();
     result = X_E_SUCCESS;
   }
@@ -96,7 +95,7 @@ dword_result_t XamUserGetSigninState_entry(dword_t user_index) {
   if (kernel_state()->xam_state()->IsUserSignedIn(user_index)) {
     const auto& user_profile =
         kernel_state()->xam_state()->GetUserProfile(user_index);
-    signin_state = user_profile->signin_state();
+    signin_state = static_cast<uint32_t>(user_profile->signin_state());
   }
   return signin_state;
 }
@@ -125,11 +124,15 @@ X_HRESULT_result_t XamUserGetSigninInfo_entry(
   xe::string_util::copy_truncating(info->name, user_profile->name(),
                                    xe::countof(info->name));
 
-  if (!flags || flags & X_USER_GET_SIGNIN_INFO_OFFLINE_XUID_ONLY) {
+  if (flags & X_USER_GET_SIGNIN_INFO_ONLINE_XUID_ONLY) {
+    info->xuid = user_profile->GetOnlineXUID();
+  } else if (flags & X_USER_GET_SIGNIN_INFO_OFFLINE_XUID_ONLY) {
     info->xuid = user_profile->xuid();
+  } else {
+    info->xuid = user_profile->GetLogonXUID();
   }
 
-  info->signin_state = user_profile->signin_state();
+  info->signin_state = static_cast<uint32_t>(user_profile->signin_state());
   return X_E_SUCCESS;
 }
 DECLARE_XAM_EXPORT1(XamUserGetSigninInfo, kUserProfiles, kImplemented);
@@ -410,8 +413,10 @@ dword_result_t XamUserCheckPrivilege_entry(dword_t user_index, dword_t mask,
   if (user_index == XUserIndexAny) {
     for (uint8_t i = 0; i < XUserMaxUserCount; ++i) {
       const auto result = XamUserCheckPrivilege_entry(i, mask, out_value);
+      if (result == X_ERROR_SUCCESS) {
+        return result;
+      }
       if (result != X_ERROR_NO_SUCH_USER) {
-        *out_value = 0;
         return result;
       }
     }
@@ -428,13 +433,12 @@ dword_result_t XamUserCheckPrivilege_entry(dword_t user_index, dword_t mask,
   }
 
   if (kernel_state()->xam_state()->GetUserProfile(user_index)->signin_state() !=
-      static_cast<uint32_t>(SignInState::SignedInToLive)) {
+      X_USER_SIGNIN_STATE::SignedInToLive) {
     *out_value = 0;
     return X_ERROR_NOT_LOGGED_ON;
   }
 
-  // If we deny everything, games should hopefully not try to do stuff.
-  *out_value = 0;
+  *out_value = 1;
   return X_ERROR_SUCCESS;
 }
 DECLARE_XAM_EXPORT1(XamUserCheckPrivilege, kUserProfiles, kStub);
@@ -508,10 +512,12 @@ dword_result_t XamUserGetMembershipTier_entry(dword_t user_index) {
     return X_XAMACCOUNTINFO::AccountSubscriptionTier::kSubscriptionTierNone;
   }
 
-  return kernel_state()
-      ->xam_state()
-      ->GetUserProfile(user_index)
-      ->GetSubscriptionTier();
+  const auto& profile = kernel_state()->xam_state()->GetUserProfile(user_index);
+  if (profile->signin_state() == X_USER_SIGNIN_STATE::SignedInToLive) {
+    return X_XAMACCOUNTINFO::AccountSubscriptionTier::kSubscriptionTierGold;
+  }
+
+  return profile->GetSubscriptionTier();
 }
 DECLARE_XAM_EXPORT1(XamUserGetMembershipTier, kUserProfiles, kImplemented);
 
@@ -519,6 +525,10 @@ dword_result_t XamUserGetMembershipTierFromXUID_entry(qword_t xuid) {
   const auto profile = kernel_state()->xam_state()->GetUserProfile(xuid);
   if (!profile) {
     return X_XAMACCOUNTINFO::AccountSubscriptionTier::kSubscriptionTierNone;
+  }
+
+  if (profile->signin_state() == X_USER_SIGNIN_STATE::SignedInToLive) {
+    return X_XAMACCOUNTINFO::AccountSubscriptionTier::kSubscriptionTierGold;
   }
 
   return profile->GetSubscriptionTier();
@@ -547,7 +557,7 @@ dword_result_t XamUserAreUsersFriends_entry(
           kernel_state()->xam_state()->GetUserProfile(user_index);
 
       // Check if we are signed into live
-      if (user_profile->signin_state() != 2) {
+      if (user_profile->signin_state() != X_USER_SIGNIN_STATE::SignedInToLive) {
         result = X_ERROR_NOT_LOGGED_ON;
       } else {
         // No friends!
@@ -895,17 +905,36 @@ dword_result_t XamWriteGamerTile_entry(dword_t user_index, dword_t title_id,
 DECLARE_XAM_EXPORT1(XamWriteGamerTile, kUserProfiles, kStub);
 
 dword_result_t XamSessionCreateHandle_entry(lpdword_t handle_ptr) {
-  *handle_ptr = 0xCAFEDEAD;
+  if (!handle_ptr) {
+    return X_ERROR_INVALID_PARAMETER;
+  }
+
+  auto session = object_ref<XSession>(new XSession(kernel_state()));
+  if (XFAILED(session->Initialize())) {
+    return X_ERROR_NOT_ENOUGH_MEMORY;
+  }
+
+  *handle_ptr = session->handle();
   return X_ERROR_SUCCESS;
 }
 DECLARE_XAM_EXPORT1(XamSessionCreateHandle, kUserProfiles, kStub);
 
 dword_result_t XamSessionRefObjByHandle_entry(dword_t handle,
                                               lpdword_t obj_ptr) {
-  assert_true(handle == 0xCAFEDEAD);
-  // TODO(PermaNull): Implement this properly,
-  // For the time being returning 0xDEADF00D will prevent crashing.
-  *obj_ptr = 0xDEADF00D;
+  if (!obj_ptr) {
+    return X_ERROR_INVALID_PARAMETER;
+  }
+
+  auto session = kernel_state()->object_table()->LookupObject<XSession>(handle);
+  if (!session || session->type() != XObject::Type::Session) {
+    *obj_ptr = 0;
+    return X_ERROR_INVALID_HANDLE;
+  }
+
+  // The title may close the original handle after getting the session object
+  // pointer, but XGI calls continue to use that object pointer.
+  session->RetainHandle();
+  *obj_ptr = session->guest_object();
   return X_ERROR_SUCCESS;
 }
 DECLARE_XAM_EXPORT1(XamSessionRefObjByHandle, kUserProfiles, kStub);

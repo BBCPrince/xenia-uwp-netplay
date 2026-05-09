@@ -9,6 +9,12 @@ if _ACTION == "cmake" then
   require("third_party/premake-cmake/cmake")
 end
 
+function linktimeoptimization(value)
+  if value == "On" then
+    flags({"LinkTimeOptimization"})
+  end
+end
+
 location(build_root)
 targetdir(build_bin)
 objdir(build_obj)
@@ -309,8 +315,10 @@ workspace("xenia")
   include("third_party/tomlplusplus.lua")
   include("third_party/FFmpeg/premake5.lua")
   include("third_party/fmt.lua")
+  include("third_party/libcurl.lua")
   include("third_party/glslang-spirv.lua")
   include("third_party/imgui.lua")
+  include("third_party/miniupnp.lua")
   include("third_party/mspack.lua")
   include("third_party/snappy.lua")
   include("third_party/xxhash.lua")
@@ -318,6 +326,7 @@ workspace("xenia")
   include("third_party/zstd.lua")
   include("third_party/zlib-ng.lua")
   include("third_party/pugixml.lua")
+  include("third_party/rapidjson.lua")
 
   if os.istarget("windows") then
     include("third_party/libusb.lua")

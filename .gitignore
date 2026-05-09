@@ -111,3 +111,13 @@ recent.toml
 /xenia-canary-uwp/Generated Files/winrt
 /xenia-canary-uwp/x64/Release
 /xenia-canary-uwp/BundleArtifacts
+/xenia-canary-uwp/AppPackages/
+/xenia-canary-uwp/xenia-canary-uwp/
+/xenia-canary-uwp/*.pfx
+*.appx
+*.appxbundle
+*.appxsym
+*.cer
+
+# Local Codex backup folders
+/_codex_*/

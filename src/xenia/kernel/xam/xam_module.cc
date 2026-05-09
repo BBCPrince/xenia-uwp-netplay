@@ -9,13 +9,32 @@
 
 #include "xenia/kernel/xam/xam_module.h"
 
+#include "xenia/base/filesystem.h"
 #include "xenia/base/math.h"
+#include "xenia/base/platform.h"
 #include "xenia/kernel/kernel_state.h"
 #include "xenia/kernel/xam/xam_private.h"
+
+#if XE_PLATFORM_WINRT
+#include "xenia-canary-uwp/UWPUtil.h"
+#endif
 
 namespace xe {
 namespace kernel {
 namespace xam {
+
+namespace {
+
+std::filesystem::path GetLoaderDataPath() {
+#if XE_PLATFORM_WINRT
+  return std::filesystem::path(UWP::GetLocalState()) /
+         std::string(kXamModuleLoaderDataFileName);
+#endif
+
+  return std::filesystem::path(std::string(kXamModuleLoaderDataFileName));
+}
+
+}  // namespace
 
 XamModule::XamModule(Emulator* emulator, KernelState* kernel_state)
     : KernelModule(kernel_state, "xe:\\xam.xex"), loader_data_() {
@@ -63,7 +82,8 @@ void XamModule::RegisterExportTable(xe::cpu::ExportResolver* export_resolver) {
 XamModule::~XamModule() {}
 
 void XamModule::LoadLoaderData() {
-  FILE* file = xe::filesystem::OpenFile(kXamModuleLoaderDataFileName, "rb");
+  const auto loader_data_path = GetLoaderDataPath();
+  FILE* file = xe::filesystem::OpenFile(loader_data_path, "rb");
 
   if (!file) {
     loader_data_.launch_data_present = false;
@@ -97,11 +117,11 @@ void XamModule::LoadLoaderData() {
 
   fclose(file);
   // We read launch data. Let's remove it till next request.
-  std::filesystem::remove(kXamModuleLoaderDataFileName);
+  std::filesystem::remove(loader_data_path);
 }
 
 void XamModule::SaveLoaderData() {
-  FILE* file = xe::filesystem::OpenFile(kXamModuleLoaderDataFileName, "wb");
+  FILE* file = xe::filesystem::OpenFile(GetLoaderDataPath(), "wb");
 
   if (!file) {
     return;

@@ -49,6 +49,12 @@ dword_result_t XamVoiceGetMicArrayStatus_entry() {
 }
 DECLARE_XAM_EXPORT1(XamVoiceGetMicArrayStatus, kNone, kStub);
 
+dword_result_t XamVoiceSetMicArrayIdleUsers_entry(dword_t user_mask) {
+  XELOGI("XamVoiceSetMicArrayIdleUsers({:08X})", user_mask.value());
+  return X_ERROR_SUCCESS;
+}
+DECLARE_XAM_EXPORT1(XamVoiceSetMicArrayIdleUsers, kNone, kStub);
+
 }  // namespace xam
 }  // namespace kernel
 }  // namespace xe

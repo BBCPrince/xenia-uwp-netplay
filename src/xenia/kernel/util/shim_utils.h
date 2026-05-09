@@ -452,15 +452,9 @@ inline void AppendParam(StringBuffer* string_buffer, ppc_context_t param) {
 }
 inline void AppendParam(StringBuffer* string_buffer, lpstring_t param) {
   string_buffer->AppendFormat("{:08X}", param.guest_address());
-  if (param) {
-    string_buffer->AppendFormat("({})", param.value());
-  }
 }
 inline void AppendParam(StringBuffer* string_buffer, lpu16string_t param) {
   string_buffer->AppendFormat("{:08X}", param.guest_address());
-  if (param) {
-    string_buffer->AppendFormat("({})", xe::to_utf8(param.value()));
-  }
 }
 inline void AppendParam(StringBuffer* string_buffer,
                         pointer_t<X_OBJECT_ATTRIBUTES> record) {
